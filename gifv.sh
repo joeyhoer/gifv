@@ -9,16 +9,17 @@ Version:   1.0.0
 Convert GIFs and videos into GIF-like videos
 
 Options: (all optional)
-  c CROP:     The x and y crops, from the top left of the image (e.g. 640:480)
-  o OUTPUT:   The basename of the file to be output. The default is the basename
+  -c CROP:     The x and y crops, from the top left of the image (e.g. 640:480)
+  -d           Directon (normal, reverse, alternate) [default: normal]
+  -o OUTPUT:   The basename of the file to be output. The default is the basename
               of the input file.
-  r FPS:      Output at this (frame)rate.
-  s SPEED:    Output using this speed modifier. The default is 1 (equal speed).
-  O OPTIMIZE: Change the compression level used (1-9), with 1 being the fastest,
+  -r FPS:      Output at this (frame)rate.
+  -s SPEED:    Output using this speed modifier. The default is 1 (equal speed).
+  -O OPTIMIZE: Change the compression level used (1-9), with 1 being the fastest,
               with less compression, and 9 being the slowest, with optimal com-
               pression.  The default compression level is 6.
-  p SCALE:    Rescale the output (e.g. 320:240)
-  x:          Remove the original file
+  -p SCALE:    Rescale the output (e.g. 320:240)
+  -x           Remove the original file
 
 Example:
   gifv -c 240:80 -o my-gifv.mp4 -x my-movie.mov
@@ -35,9 +36,10 @@ level=6
 
 OPTERR=0
 
-while getopts "c:o:p:r:s:O:xh" opt; do
+while getopts "c:d:o:p:r:s:O:xh" opt; do
   case $opt in
     c) crop=$OPTARG;;
+    d) direction=$OPTARG;;
     h) printHelpAndExit 0;;
     o) output=$OPTARG;;
     p) scale=$OPTARG;;
@@ -56,7 +58,8 @@ filename="$1"
 if [ -z "$output" ]; then
   # Strip off extension and add new extension
   ext="${filename##*.}"
-  output="$(basename "$filename" ".$ext").mp4"
+  path=$(dirname $filename)
+  output="$path/$(basename "$filename" ".$ext").mp4"
 fi
 
 if [ -z "$filename" ]; then printHelpAndExit 1; fi
@@ -81,6 +84,7 @@ else
 fi
 
 # Convert GIFs
+# A fix for gifs that may not have a perfectly sized aspect ratio
 if [ $(file -b --mime-type "$filename") == image/gif ]; then
   giffix="scale='if(eq(mod(iw,2),0),iw,iw-1)':'if(eq(mod(ih,2),0),ih,ih-1)'"
 else
@@ -110,6 +114,14 @@ fi
 (( $level < 1 )) && level=1 # OR err
 optimize="${levels[$level]}"
 
+# Direction options (for use with convert)
+direction_opt=
+if [[ $direction == "reverse" ]]; then
+  direction_opt="-coalesce -reverse"
+elif [[ $direction == "alternate" ]]; then
+  direction_opt="-coalesce -duplicate 1,-2-1"
+fi
+
 # TODO: Offer further optimizations
 #   Contrast frame rate : -crf 22
 #   Bit rate : -b:v 1000k
@@ -122,10 +134,19 @@ codec="-c:v libx264"
 # Verbosity
 verbosity="-loglevel panic"
 
+# Create optimized GIF-like video
+if [[ "$direction" == 'reverse' ]] || [[ "$direction" == 'alternate' ]]; then
+  ffmpeg $verbosity -i "$filename" -f image2pipe -vcodec ppm - | \
+    convert $direction_opt - ppm:- | \
+    ffmpeg $verbosity -f image2pipe -vcodec ppm -r 60 -i pipe: \
+    $codec $filter $fps -an -pix_fmt yuv420p \
+    -preset "$optimize" -movflags faststart "$output"
+else
+  ffmpeg $verbosity -i "$filename" $codec $filter $fps -an -pix_fmt yuv420p \
+    -preset "$optimize" -movflags faststart "$output"
+fi
 
-ffmpeg $verbosity -i "$filename" $codec $filter $fps -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart "$output"
-
-
+# Cleanup
 if [ $cleanup ]; then
   rm "$filename"
 fi
