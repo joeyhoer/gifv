@@ -58,7 +58,7 @@ filename="$1"
 if [ -z "$output" ]; then
   # Strip off extension and add new extension
   ext="${filename##*.}"
-  path=$(dirname $filename)
+  path=$(dirname "$filename")
   output="$path/$(basename "$filename" ".$ext").mp4"
 fi
 
@@ -85,7 +85,7 @@ fi
 
 # Convert GIFs
 # A fix for gifs that may not have a perfectly sized aspect ratio
-if [ $(file -b --mime-type "$filename") == image/gif ]; then
+if [ "$(file -b --mime-type "$filename")" == image/gif ]; then
   giffix="scale='if(eq(mod(iw,2),0),iw,iw-1)':'if(eq(mod(ih,2),0),ih,ih-1)'"
 else
   giffix=
@@ -116,9 +116,9 @@ optimize="${levels[$level]}"
 
 # Direction options (for use with convert)
 direction_opt=
-if [[ $direction == "reverse" ]]; then
+if [[ "$direction" == "reverse" ]]; then
   direction_opt="-coalesce -reverse"
-elif [[ $direction == "alternate" ]]; then
+elif [[ "$direction" == "alternate" ]]; then
   direction_opt="-coalesce -duplicate 1,-2-1"
 fi
 
