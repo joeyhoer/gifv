@@ -2,9 +2,9 @@
 
 # Set global variables
 PROGNAME=$(basename "$0")
-VERSION='1.0.0'
+VERSION='1.1.0'
 
-function printHelpAndExit {
+print_help() {
 cat <<EOF
 Usage:    $PROGNAME [options] input-file
 Version:  $VERSION
@@ -32,26 +32,26 @@ exit $1
 }
 
 ##
-# Check for a dependancy
+# Check for a dependency
 #
 # @param 1 Command to check
 ##
-dependancy() {
+dependency() {
   hash "$1" &>/dev/null || error "$1 must be installed"
 }
 
 ##
-# Join elements with seperator
+# Join a list with a seperator
 #
-# @param 1 Seperator
-# @param * Elements to join
+# @param 1  Seperator
+# @param 2+ Items to join
 ##
-function join { local IFS="$1"; shift; echo "$*"; }
+join_by() { local d=$1; shift; echo -n "$1"; shift; printf "%s" "${@/#/$d}"; }
 
 ################################################################################
 
-# Check dependacies
-dependancy ffmpeg
+# Check dependencies
+dependency ffmpeg
 
 # Initialize variables
 levels=(ultrafast superfast veryfast faster fast medium slow slower veryslow)
@@ -62,22 +62,27 @@ OPTERR=0
 while getopts "c:d:o:p:r:s:O:xh" opt; do
   case $opt in
     c) crop=$OPTARG;;
-    d) direction=$OPTARG;;
-    h) printHelpAndExit 0;;
+    d) direction_opt=$OPTARG;;
+    h) print_help 0;;
     o) output=$OPTARG;;
     p) scale=$OPTARG;;
     r) fps=$OPTARG;;
     s) speed=$OPTARG;;
     O) level=$OPTARG;;
     x) cleanup=1;;
-    *) printHelpAndExit 1;;
+    *) print_help 1;;
   esac
 done
 
 shift $(( OPTIND - 1 ))
 
+# Store input filename
 filename="$1"
 
+# Print help, if no input file
+[ -z "$filename" ] && print_help 1
+
+# Automatically set output filename, if not defined
 if [ -z "$output" ]; then
   # Strip off extension and add new extension
   ext="${filename##*.}"
@@ -85,89 +90,70 @@ if [ -z "$output" ]; then
   output="$path/$(basename "$filename" ".$ext").mp4"
 fi
 
-if [ -z "$filename" ]; then printHelpAndExit 1; fi
-
 # Video filters (scale, crop, speed)
 if [ $crop ]; then
   crop="crop=${crop}:0:0"
-else
-  crop=
 fi
 
 if [ $scale ]; then
   scale="scale=${scale}"
-else
-  scale=
 fi
 
 if [ $speed ]; then
   speed="setpts=$(bc -l <<< "scale=4;1/${speed}")*PTS"
-else
-  speed=
 fi
 
 # Convert GIFs
 # A fix for gifs that may not have a perfectly sized aspect ratio
 if [ "$(file -b --mime-type "$filename")" == image/gif ]; then
   giffix="scale='if(eq(mod(iw,2),0),iw,iw-1)':'if(eq(mod(ih,2),0),ih,ih-1)'"
-else
-  giffix=
 fi
 
-# Concatenate options into a video filter string
-# giffix must be applied after any scaling/cropping
-if [ $scale ] || [ $crop ] || [ $speed ] || [ $giffix ]; then
-  filter="-vf $(join , $scale $crop $speed $giffix)"
-else
-  filter=
+# Direction
+if [ "$direction_opt" == "reverse" ]; then
+  direction="reverse"
+elif [[ "$direction_opt" == "alternate" ]]; then
+  filter="trim=start_frame=1,reverse,trim=start_frame=1,setpts=PTS-STARTPTS[rev];[0][rev]concat"
+fi
+
+# Concatenate options into a filter string
+# Note: giffix must be applied after any scaling/cropping
+if [ $scale ] || [ $crop ] || [ $speed ] || [ $giffix ] || [ $direction ]; then
+  filter="$(join_by "[out];[out]" $filter $(join_by , $scale $crop $speed $giffix $direction))"
+fi
+
+# Prepare filter string opt
+if [ $filter ]; then
+  filter="-filter_complex [0]${filter}[out] -map [out]"
 fi
 
 # FPS
 if [ $fps ]; then
   fps="-r $fps"
-else
-  fps=
 fi
 
 # Optimization level
-#   1: (fastest, worst compression)
-#   9: (slowest, best compression)
-
+# 1: Fastest, worst compression
+# 9: Slowest, best compression
 (( $level > 9 )) && level=9 # OR err
 (( $level < 1 )) && level=1 # OR err
-optimize="${levels[$level]}"
-
-# Direction options (for use with convert)
-direction_opt=
-if [[ "$direction" == "reverse" ]]; then
-  direction_opt="-coalesce -reverse"
-elif [[ "$direction" == "alternate" ]]; then
-  direction_opt="-coalesce -duplicate 1,-2-1"
-fi
+optimize="${levels[$((level-1))]}"
 
 # TODO: Offer further optimizations
-#   Contrast frame rate : -crf 22
-#   Bit rate : -b:v 1000k
+# Constant rate factor (for better optimizations): -crf 22
+# Bit rate: -b:v 1000k
 
 # Codecs:
-#   webm:  libvpx
-#   h.264: libx264
+# libvpx: webm
+# libx264: h.264
 codec="-c:v libx264"
 
 # Verbosity
 verbosity="-loglevel panic"
 
 # Create optimized GIF-like video
-if [[ "$direction" == 'reverse' ]] || [[ "$direction" == 'alternate' ]]; then
-  ffmpeg $verbosity -i "$filename" -f image2pipe -vcodec ppm - | \
-    convert $direction_opt - ppm:- | \
-    ffmpeg $verbosity -f image2pipe -vcodec ppm -r 60 -i pipe: \
-    $codec $filter $fps -an -pix_fmt yuv420p \
-    -preset "$optimize" -movflags faststart "$output"
-else
-  ffmpeg $verbosity -i "$filename" $codec $filter $fps -an -pix_fmt yuv420p \
-    -preset "$optimize" -movflags faststart "$output"
-fi
+ffmpeg $verbosity -i "$filename" $codec $filter $fps \
+  -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart "$output"
 
 # Cleanup
 if [ $cleanup ]; then
