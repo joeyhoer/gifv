@@ -1,34 +1,57 @@
 #!/usr/bin/env bash
 
+# Set global variables
+PROGNAME=$(basename "$0")
+VERSION='1.0.0'
+
 function printHelpAndExit {
 cat <<EOF
-Usage:
-  gifv [options] filename
-Version:   1.0.0
+Usage:    $PROGNAME [options] input-file
+Version:  $VERSION
 
 Convert GIFs and videos into GIF-like videos
 
 Options: (all optional)
-  -c CROP:     The x and y crops, from the top left of the image (e.g. 640:480)
-  -d           Directon (normal, reverse, alternate) [default: normal]
-  -o OUTPUT:   The basename of the file to be output. The default is the basename
-              of the input file.
-  -r FPS:      Output at this (frame)rate.
-  -s SPEED:    Output using this speed modifier. The default is 1 (equal speed).
-  -O OPTIMIZE: Change the compression level used (1-9), with 1 being the fastest,
-              with less compression, and 9 being the slowest, with optimal com-
-              pression.  The default compression level is 6.
-  -p SCALE:    Rescale the output (e.g. 320:240)
+  -c CROP      The x and y crops, from the top left of the image (e.g. 640:480)
+  -d DIRECTION Directon (normal, reverse, alternate) [default: normal]
+  -o OUTPUT    The basename of the file to be output. The default is the
+               basename of the input file.
+  -r FPS       Output at this (frame)rate.
+  -s SPEED     Output using this speed modifier. The default is 1 (equal speed).
+  -O OPTIMIZE  Change the compression level used (1-9), with 1 being the
+               fastest, with less compression, and 9 being the slowest, with
+               optimal compression. The default compression level is 6.
+  -p SCALE     Rescale the output (e.g. 320:240)
   -x           Remove the original file
 
 Example:
-  gifv -c 240:80 -o my-gifv.mp4 -x my-movie.mov
+  gifv -c 240:80 -o gifv.mp4 -x video.mov
 
 EOF
 exit $1
 }
 
+##
+# Check for a dependancy
+#
+# @param 1 Command to check
+##
+dependancy() {
+  hash "$1" &>/dev/null || error "$1 must be installed"
+}
+
+##
+# Join elements with seperator
+#
+# @param 1 Seperator
+# @param * Elements to join
+##
 function join { local IFS="$1"; shift; echo "$*"; }
+
+################################################################################
+
+# Check dependacies
+dependancy ffmpeg
 
 # Initialize variables
 levels=(ultrafast superfast veryfast faster fast medium slow slower veryslow)
