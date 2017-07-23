@@ -14,6 +14,9 @@ Convert GIFs and videos into GIF-like videos
 Options: (all optional)
   -c CROP      The x and y crops, from the top left of the image (e.g. 640:480)
   -d DIRECTION Directon (normal, reverse, alternate) [default: normal]
+  -f FADE      The looped crossfade duration in seconds. If the fade duration
+               exceeds half the length of the video, the full video will be
+               crossfaded.
   -o OUTPUT    The basename of the file to be output. The default is the
                basename of the input file.
   -r FPS       Output at this (frame)rate.
@@ -59,10 +62,11 @@ level=6
 
 OPTERR=0
 
-while getopts "c:d:o:p:r:s:O:xh" opt; do
+while getopts "c:d:f:o:p:r:s:O:xh" opt; do
   case $opt in
     c) crop=$OPTARG;;
     d) direction_opt=$OPTARG;;
+    f) fade_duration=$OPTARG;;
     h) print_help 0;;
     o) output=$OPTARG;;
     p) scale=$OPTARG;;
@@ -105,12 +109,12 @@ fi
 
 # Convert GIFs
 # A fix for gifs that may not have a perfectly sized aspect ratio
-if [ "$(file -b --mime-type "$filename")" == image/gif ]; then
+if [[ "$(file -b --mime-type "$filename")" == image/gif ]]; then
   giffix="scale='if(eq(mod(iw,2),0),iw,iw-1)':'if(eq(mod(ih,2),0),ih,ih-1)'"
 fi
 
 # Direction
-if [ "$direction_opt" == "reverse" ]; then
+if [[ "$direction_opt" == "reverse" ]]; then
   direction="reverse"
 elif [[ "$direction_opt" == "alternate" ]]; then
   filter="trim=start_frame=1,reverse,trim=start_frame=1,setpts=PTS-STARTPTS[rev];[0][rev]concat"
@@ -120,6 +124,25 @@ fi
 # Note: giffix must be applied after any scaling/cropping
 if [ $scale ] || [ $crop ] || [ $speed ] || [ $giffix ] || [ $direction ]; then
   filter="$(join_by "[out];[out]" $filter $(join_by , $scale $crop $speed $giffix $direction))"
+fi
+
+# Crossfade
+if [[ $fade_duration > 0 ]]; then
+  # This has issues when modifing video speed
+  video_duration=$(ffprobe -i "$filename" -show_entries format=duration -v quiet -of csv="p=0")
+  keyframe=$(bc -l <<< "scale=4;${video_duration}-2*${fade_duration}")
+
+  # When the fade duration is more than half the video duration,
+  # it isn't possible to achieve the fade.
+  # Update the fade duration to equal half of the video duration,
+  # so the entire video is crossfaded
+  if [[ $(bc -l <<< "$keyframe <= 0") ]]; then
+    fade_duration=$(bc -l <<< "scale=4;${video_duration}/2")
+    keyframe=0
+  fi
+
+  # Append filter
+  filter="$(join_by "[out];[out]" $filter "split[body][pre];[pre]trim=duration=${fade_duration},fade=d=${fade_duration}:alpha=1,setpts=PTS+(${keyframe}/TB)[faded];[body]trim=${fade_duration},setpts=PTS-STARTPTS[main];[main][faded]overlay")"
 fi
 
 # Prepare filter string opt
@@ -149,9 +172,10 @@ optimize="${levels[$((level-1))]}"
 codec="-c:v libx264"
 
 # Verbosity
-verbosity="-loglevel panic"
+# verbosity="-loglevel panic"
 
 # Create optimized GIF-like video
+echo "$filter"
 ffmpeg $verbosity -i "$filename" $codec $filter $fps \
   -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart "$output"
 
