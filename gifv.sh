@@ -2,7 +2,7 @@
 
 # Set global variables
 PROGNAME=$(basename "$0")
-VERSION='1.1.0'
+VERSION='1.1.1'
 
 print_help() {
 cat <<EOF
@@ -14,6 +14,7 @@ Convert GIFs and videos into GIF-like videos
 Options: (all optional)
   -c CROP      The x and y crops, from the top left of the image (e.g. 640:480)
   -d DIRECTION Directon (normal, reverse, alternate) [default: normal]
+  -l LOOP      Play the video N times [default: 1]
   -o OUTPUT    The basename of the file to be output. The default is the
                basename of the input file.
   -r FPS       Output at this (frame)rate.
@@ -59,11 +60,12 @@ level=6
 
 OPTERR=0
 
-while getopts "c:d:o:p:r:s:O:xh" opt; do
+while getopts "c:d:l:o:p:r:s:O:xh" opt; do
   case $opt in
     c) crop=$OPTARG;;
     d) direction_opt=$OPTARG;;
     h) print_help 0;;
+    l) loop=$OPTARG;;
     o) output=$OPTARG;;
     p) scale=$OPTARG;;
     r) fps=$OPTARG;;
@@ -132,6 +134,12 @@ if [ $fps ]; then
   fps="-r $fps"
 fi
 
+# Loop
+if [[ $loop -gt 1 ]]; then
+  loop_arg="-stream_loop $(( $loop - 1 ))"
+  echo "$loop_arg"
+fi
+
 # Optimization level
 # 1: Fastest, worst compression
 # 9: Slowest, best compression
@@ -152,7 +160,7 @@ codec="-c:v libx264"
 verbosity="-loglevel panic"
 
 # Create optimized GIF-like video
-ffmpeg $verbosity -i "$filename" $codec $filter $fps \
+ffmpeg $verbosity $loop_arg -i "$filename" $codec $filter $fps  \
   -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart "$output"
 
 # Cleanup
