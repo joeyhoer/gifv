@@ -2,7 +2,7 @@
 
 # Set global variables
 PROGNAME=$(basename "$0")
-VERSION='1.1.1'
+VERSION='1.1.2'
 
 print_help() {
 cat <<EOF
@@ -19,6 +19,7 @@ Options: (all optional)
                basename of the input file.
   -r FPS       Output at this (frame)rate.
   -s SPEED     Output using this speed modifier. The default is 1 (equal speed).
+  -t DURATION  Speed or slow video to a target duration
   -O OPTIMIZE  Change the compression level used (1-9), with 1 being the
                fastest, with less compression, and 9 being the slowest, with
                optimal compression. The default compression level is 6.
@@ -60,7 +61,7 @@ level=6
 
 OPTERR=0
 
-while getopts "c:d:l:o:p:r:s:O:xh" opt; do
+while getopts "c:d:l:o:p:r:s:t:O:xh" opt; do
   case $opt in
     c) crop=$OPTARG;;
     d) direction_opt=$OPTARG;;
@@ -70,6 +71,7 @@ while getopts "c:d:l:o:p:r:s:O:xh" opt; do
     p) scale=$OPTARG;;
     r) fps=$OPTARG;;
     s) speed=$OPTARG;;
+    t) target_duration=$OPTARG;;
     O) level=$OPTARG;;
     x) cleanup=1;;
     *) print_help 1;;
@@ -101,8 +103,13 @@ if [ $scale ]; then
   scale="scale=${scale}"
 fi
 
-if [ $speed ]; then
-  speed="setpts=$(bc -l <<< "scale=4;1/${speed}")*PTS"
+if [ $target_duration ]; then
+  source_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filename")
+  # Can also set audio speed using atempo
+  # atempo=(1/(${target_duration}/${source_duration}))
+  speed="setpts=(${target_duration}/${source_duration})*PTS"
+elif [ $speed ]; then
+  speed="setpts=(1/${speed})*PTS"
 fi
 
 # Convert GIFs
