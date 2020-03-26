@@ -144,7 +144,6 @@ fi
 # Loop
 if [[ $loop -gt 1 ]]; then
   loop_arg="-stream_loop $(( $loop - 1 ))"
-  echo "$loop_arg"
 fi
 
 # Optimization level
