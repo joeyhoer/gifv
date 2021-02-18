@@ -2,7 +2,7 @@
 
 # Set global variables
 PROGNAME=$(basename "$0")
-VERSION='1.1.2'
+VERSION='1.1.3'
 
 print_help() {
 cat <<EOF
@@ -58,6 +58,7 @@ dependency ffmpeg
 # Initialize variables
 levels=(ultrafast superfast veryfast faster fast medium slow slower veryslow)
 level=6
+tempdir=/tmp/
 
 OPTERR=0
 
@@ -67,31 +68,39 @@ while getopts "c:d:l:o:p:r:s:t:O:xh" opt; do
     d) direction_opt=$OPTARG;;
     h) print_help 0;;
     l) loop=$OPTARG;;
-    o) output=$OPTARG;;
+    o) output_file=$OPTARG;;
     p) scale=$OPTARG;;
     r) fps=$OPTARG;;
     s) speed=$OPTARG;;
     t) target_duration=$OPTARG;;
     O) level=$OPTARG;;
-    x) cleanup=1;;
+    x) remove_input=1;;
     *) print_help 1;;
   esac
 done
 
 shift $(( OPTIND - 1 ))
 
-# Store input filename
-filename="$1"
+# Store input file
+input_file="$1"
 
 # Print help, if no input file
-[ -z "$filename" ] && print_help 1
+[ -z "$input_file" ] && print_help 1
 
-# Automatically set output filename, if not defined
-if [ -z "$output" ]; then
-  # Strip off extension and add new extension
-  ext="${filename##*.}"
-  path=$(dirname "$filename")
-  output="$path/$(basename "$filename" ".$ext").mp4"
+# Automatically set output file, if not defined
+if [ -z "$output_file" ]; then
+  # Strip off input file extension and add new extension
+  input_file_ext="${input_file##*.}"
+  input_file_path=$(dirname "$input_file")
+  output_file="$input_file_path/$(basename "$input_file" ".$input_file_ext").mp4"
+
+  # If overwriting the input file, output as temporary file,
+  # then move into place
+  if [ "$input_file" -ef "$output_file" ]; then
+    input_file_basename="${input_file##*/}"
+    tmp_output_file="$tempdir/$input_file_basename"
+    output_file="$tmp_output_file"
+  fi
 fi
 
 # Video filters (scale, crop, speed)
@@ -104,7 +113,7 @@ if [ $scale ]; then
 fi
 
 if [ $target_duration ]; then
-  source_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$filename")
+  source_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$input_file")
   # Can also set audio speed using atempo
   # atempo=(1/(${target_duration}/${source_duration}))
   speed="setpts=(${target_duration}/${source_duration})*PTS"
@@ -115,7 +124,7 @@ fi
 
 # Convert GIFs
 # A fix for gifs that may not have a perfectly sized aspect ratio
-if [ "$(file -b --mime-type "$filename")" == image/gif ]; then
+if [ "$(file -b --mime-type "$input_file")" == image/gif ]; then
   giffix="scale='if(eq(mod(iw,2),0),iw,iw-1)':'if(eq(mod(ih,2),0),ih,ih-1)'"
 fi
 
@@ -173,10 +182,17 @@ bsf="-bsf:v filter_units=remove_types=6"
 verbosity="-loglevel panic"
 
 # Create optimized GIF-like video
-ffmpeg $verbosity $loop_arg -i "$filename" $codec $filter $fps $bsf \
-  -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart "$output"
+ffmpeg $verbosity $loop_arg -i "$input_file" $codec $filter $fps $bsf \
+  -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart "$output_file"
 
-# Cleanup
-if [ $cleanup ]; then
-  rm "$filename"
+# If temporary output file exists, then overwrite input file
+if [ -f "$tmp_output_file" ]; then
+  mv -f "$tmp_output_file" "$input_file"
 fi
+
+# Remove input file
+if [ $remove_input ]; then
+  rm "$input_file"
+fi
+
+trap "rm -f $tmp_output_file" EXIT INT TERM
