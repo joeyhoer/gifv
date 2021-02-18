@@ -109,6 +109,7 @@ if [ $target_duration ]; then
   # atempo=(1/(${target_duration}/${source_duration}))
   speed="setpts=(${target_duration}/${source_duration})*PTS"
 elif [ $speed ]; then
+  # atempo=${speed}
   speed="setpts=(1/${speed})*PTS"
 fi
 
@@ -122,18 +123,20 @@ fi
 if [ "$direction_opt" == "reverse" ]; then
   direction="reverse"
 elif [[ "$direction_opt" == "alternate" ]]; then
-  filter="trim=start_frame=1,reverse,trim=start_frame=1,setpts=PTS-STARTPTS[rev];[0][rev]concat"
+  filter="trim=start_frame=1,reverse,trim=start_frame=1,setpts=PTS-STARTPTS[rev];[0:v][rev]concat"
 fi
 
 # Concatenate options into a filter string
 # Note: giffix must be applied after any scaling/cropping
 if [ $scale ] || [ $crop ] || [ $speed ] || [ $giffix ] || [ $direction ]; then
-  filter="$(join_by "[out];[out]" $filter $(join_by , $scale $crop $speed $giffix $direction))"
+  filter="$(join_by "[v];[v]" $filter $(join_by , $scale $crop $speed $giffix $direction))"
 fi
+
+
 
 # Prepare filter string opt
 if [ $filter ]; then
-  filter="-filter_complex [0]${filter}[out] -map [out]"
+  filter="-filter_complex [0:v]${filter}[v] -map [v]"
 fi
 
 # FPS
@@ -162,11 +165,15 @@ optimize="${levels[$((level-1))]}"
 # libx264: h.264
 codec="-c:v libx264"
 
+# Remove writing library metadata
+bsf="-bsf:v filter_units=remove_types=6"
+# -bitexact -map_metadata -1
+
 # Verbosity
 verbosity="-loglevel panic"
 
 # Create optimized GIF-like video
-ffmpeg $verbosity $loop_arg -i "$filename" $codec $filter $fps  \
+ffmpeg $verbosity $loop_arg -i "$filename" $codec $filter $fps $bsf \
   -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart "$output"
 
 # Cleanup
