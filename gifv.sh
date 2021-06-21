@@ -2,7 +2,7 @@
 
 # Set global variables
 PROGNAME=$(basename "$0")
-VERSION='1.1.3'
+VERSION='1.1.4'
 
 print_help() {
 cat <<EOF
@@ -20,6 +20,7 @@ Options: (all optional)
   -r FPS       Output at this (frame)rate.
   -s SPEED     Output using this speed modifier. The default is 1 (equal speed).
   -t DURATION  Speed or slow video to a target duration
+  -M           Write "optimized=true" to video metadata
   -O OPTIMIZE  Change the compression level used (1-9), with 1 being the
                fastest, with less compression, and 9 being the slowest, with
                optimal compression. The default compression level is 6.
@@ -62,7 +63,7 @@ tempdir=/tmp/
 
 OPTERR=0
 
-while getopts "c:d:l:o:p:r:s:t:O:xh" opt; do
+while getopts "c:d:l:o:p:r:s:t:O:Mhx" opt; do
   case $opt in
     c) crop=$OPTARG;;
     d) direction_opt=$OPTARG;;
@@ -73,6 +74,7 @@ while getopts "c:d:l:o:p:r:s:t:O:xh" opt; do
     r) fps=$OPTARG;;
     s) speed=$OPTARG;;
     t) target_duration=$OPTARG;;
+    M) add_metadata=1;;
     O) level=$OPTARG;;
     x) remove_input=1;;
     *) print_help 1;;
@@ -175,15 +177,21 @@ optimize="${levels[$((level-1))]}"
 codec="-c:v libx264"
 
 # Remove writing library metadata
-bsf="-bsf:v filter_units=remove_types=6"
+bsf="-bsf:v filter_units=remove_types=6 -fflags +bitexact"
 # -bitexact -map_metadata -1
+
+# Add "optimized=true" to metadata
+if [ $add_metadata ]; then
+  metadata="-movflags use_metadata_tags -metadata optimized=true"
+fi
 
 # Verbosity
 verbosity="-loglevel panic"
 
 # Create optimized GIF-like video
 ffmpeg $verbosity $loop_arg -i "$input_file" $codec $filter $fps $bsf \
-  -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart "$output_file"
+  -an -pix_fmt yuv420p -preset "$optimize" -movflags faststart \
+  $metadata "$output_file"
 
 # If temporary output file exists, then overwrite input file
 if [ -f "$tmp_output_file" ]; then
