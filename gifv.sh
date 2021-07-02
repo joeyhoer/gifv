@@ -2,7 +2,7 @@
 
 # Set global variables
 PROGNAME=$(basename "$0")
-VERSION='1.1.4'
+VERSION='1.1.5'
 
 print_help() {
 cat <<EOF
@@ -60,6 +60,7 @@ dependency ffmpeg
 levels=(ultrafast superfast veryfast faster fast medium slow slower veryslow)
 level=6
 tempdir=/tmp/
+loop=1
 
 OPTERR=0
 
@@ -118,7 +119,7 @@ if [ $target_duration ]; then
   source_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$input_file")
   # Can also set audio speed using atempo
   # atempo=(1/(${target_duration}/${source_duration}))
-  speed="setpts=(${target_duration}/${source_duration})*PTS"
+  speed="setpts=(${target_duration}/(${source_duration}*${loop}))*PTS"
 elif [ $speed ]; then
   # atempo=${speed}
   speed="setpts=(1/${speed})*PTS"
@@ -186,7 +187,7 @@ if [ $add_metadata ]; then
 fi
 
 # Verbosity
-verbosity="-loglevel panic"
+verbosity="-loglevel error"
 
 # Create optimized GIF-like video
 ffmpeg $verbosity $loop_arg -i "$input_file" $codec $filter $fps $bsf \
