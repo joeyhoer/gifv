@@ -103,6 +103,13 @@ input_file="$1"
 # Print help, if no input file
 [ -z "$input_file" ] && print_help 1
 
+# Only preserve audio if the input actually has an audio stream
+if [ $audio ]; then
+  if [ -z "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$input_file")" ]; then
+    unset audio
+  fi
+fi
+
 # Automatically set output file, if not defined
 if [ -z "$output_file" ]; then
   # Strip off input file extension and add new extension
@@ -222,10 +229,13 @@ fi
 # Verbosity
 verbosity="-loglevel error"
 
-# Create video
+# Clean up any temporary output file on exit
+trap 'rm -f "$tmp_output_file"' EXIT INT TERM
+
+# Create video; on failure, exit before replacing or removing the input file
 ffmpeg $verbosity $loop_arg -i "$input_file" $codec $filter $audio $fps_mode $bsf \
    -pix_fmt yuv420p -preset "$optimize" $bitrate_quality -movflags faststart $metadata \
-   "$output_file"
+   "$output_file" || error "ffmpeg failed to convert $input_file"
 
 # If temporary output file exists, then overwrite input file
 if [ -f "$tmp_output_file" ]; then
@@ -236,5 +246,3 @@ fi
 if [ $remove_input ]; then
   rm "$input_file"
 fi
-
-trap "rm -f $tmp_output_file" EXIT INT TERM
